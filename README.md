@@ -6,7 +6,7 @@ Spock is a simulator for Vulcan Protocol that enables what-if scenarios to proje
 
 Creating a rebasing protocol like Vulcan is an enormously complicated engineering endeavor. The changing values of token balances and triggers for certain events have to be associated with time durations (epochs). Modeling values for this requires the ability to simulate the protocol's behavior over a large span of time. A simulator enables us to compress time and model/tweak values based on business requirements until they represent the desired state.
 
-Using this simulator, the Vulcan team has been able to model, simulate and validate the behavior of the protocol over 20+ years in just a few minutes. With this code, you can do the same. The simulator is been designed to be easy to change and test various scenarios. You do need knowledge of JavaScript and NodeJS, but no other expertise is required.
+Using this simulator, the Vulcan team has been able to model, simulate and validate the behavior of the protocol over 20+ years in just a few minutes. With this code, you can do the same. The simulator has been designed to be easy to change and test various scenarios. You do need knowledge of JavaScript and NodeJS, but no other expertise is required.
 
 ### Spock Architecture
 
