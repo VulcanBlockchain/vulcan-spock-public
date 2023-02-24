@@ -1,0 +1,37 @@
+syntax = 'proto3';
+
+//https://json-to-proto.github.io/
+
+package VulcanPackage;
+
+service Vulcan {
+    rpc getBalance (AccountInfo) returns (BalanceInfo);
+    rpc transfer (TransferInfo) returns (BalancesInfo);
+    rpc gasTransfer (TransferInfo) returns (BalancesInfo);
+    rpc totalSupply (Empty) returns (TotalSupplyInfo);
+}
+
+message Empty {}
+
+message AccountInfo {
+    string account = 1;
+}
+
+message BalanceInfo {
+    string account = 1;
+    string balance = 2;
+}
+
+message BalancesInfo {
+    repeated BalanceInfo balances = 1;
+}
+
+message TotalSupplyInfo {
+    string totalSupply = 1;
+}
+
+message TransferInfo {
+    string from = 1;
+    string to = 2;
+    uint32 amount = 3;
+}

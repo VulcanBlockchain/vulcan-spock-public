@@ -1,0 +1,33 @@
+{
+	"treasuryAccount": "0xTreasury",
+	"flexAccount": "0xFlex",
+	"holder":"0xDemo1",
+
+	"genesisAccounts": {
+		"0xTreasury": 33000000,
+		"0xSacrificers": 25058513,
+		"0xNodeOwners": 1599000,
+		"0xDemo1": 1000,
+		"0xDemo2": 0,
+		"0xDemo3": 0,
+		"0xDemo4": 0
+	},
+
+	"treasuryTaxRate": 1,
+	"flexTaxRate": 1,
+	"firePitTaxRate": 3,
+	"slashFirePit":true,
+	"slashUsingInitSupply":false,
+	"firepitMod":true,
+	"startSlashEpoch": 8639,
+	"stopSlashEpoch": 560162,
+	"add3percenttoFirepit":true,
+	"curve3Percent":true,
+	"vulTransSimMarketPrice": 9,
+	"startTransQuantity":3000,
+	"endTransQuantity":1000000,
+	"endEpoch":663535,
+	"dollarDumpEpoch":192,
+	"dumpDeltaUsd":8,
+	"endPriceUsd":85
+}
