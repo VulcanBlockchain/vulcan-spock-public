@@ -24,7 +24,6 @@ const protocol = new Protocol(config);
 server.addService(vulcanPackage.Vulcan.service, {
 	'getBalance': getBalance,
 	'transfer': transfer,
-	'gasTransfer': gasTransfer,
 	'totalSupply': totalSupply
 });
 
