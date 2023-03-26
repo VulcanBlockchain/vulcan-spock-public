@@ -1,6 +1,6 @@
 {
   "name": "spock",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "",
   "scripts": {
     "vserver": "node ./vulcan-server.js",
@@ -14,5 +14,8 @@
     "@grpc/grpc-js": "^1.8.0",
     "@grpc/proto-loader": "^0.7.4",
     "ethers": "^5.7.2"
+  },
+  "devDependencies": {
+    "cli-table": "^0.3.11"
   }
 }

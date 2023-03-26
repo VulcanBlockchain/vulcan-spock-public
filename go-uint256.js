@@ -40,6 +40,10 @@ class uint256 {
         return b;
     }
 
+    Equals(x) {
+        return this.bigNumber.eq(typeof x === 'object' ? x.bigNumber : x);
+    }
+
     static Mod(x, y) {
         const b = uint256.NewInt(x);
         b.bigNumber = typeof y === 'object' ? b.bigNumber.mod(y.bigNumber) : b.bigNumber.mod(y);
@@ -47,8 +51,15 @@ class uint256 {
     }
 
     static Exp(x, y, m) {
-        const b = uint256.NewInt(BigNumber.from(x).pow(y));
+        const x1 = uint256.NewInt(x);
+        const y1 = uint256.NewInt(y);
+        const b = uint256.NewInt(0);
+        b.bigNumber = x1.bigNumber.pow(y1.bigNumber);
         return b;
+    }
+
+    GT(x) {
+        return this.bigNumber.gt(typeof x === 'object' ? x.bigNumber : x);
     }
 
     GTE(x) {
@@ -67,7 +78,12 @@ class uint256 {
         let c = ethers.utils.commify(typeof x === 'object' ? x.bigNumber : x).split(',');
         c.length = c.length > 6 ? c.length - 6 : c.length;
         return c.join(',');
+    }
 
+    Commify() {
+        let c = ethers.utils.commify(this.bigNumber).split(',');
+        c.length = c.length > 6 ? c.length - 6 : c.length;
+        return c.join(',');
     }
 
     static MAX() {

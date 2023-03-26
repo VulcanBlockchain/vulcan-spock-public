@@ -9,10 +9,10 @@ const packageDefinition = protoLoader.loadSync('./vulcan.proto', {});
 const vulcanPackage = grpc.loadPackageDefinition(packageDefinition).VulcanPackage;
 
 // CHANGE THIS VALUE TO SPEED UP EPOCHS IN SIMULATOR
-const EPOCH_INTERVAL_MSEC = 1000; // Can be any value for simulator...smaller = faster
+const BLOCK_INTERVAL_MSEC = 5; // Can be any value for simulator...smaller = faster
 
 
-const EPOCH_SECONDS = 15 * 60; // 15 minutes in seconds
+const BLOCK_SECONDS = 5; 
 
 // Create the RPC server
 const server = new grpc.Server();
@@ -37,40 +37,40 @@ server.bindAsync('0.0.0.0:50051', grpc.ServerCredentials.createInsecure(), async
 	await new Promise(resolve => setInterval(() => { 
         
 		     
-        let rebaseInfo = protocol.rebase();
+		// Simulate adding a block
+        protocol._addBlock();
 
-		console.info(
-			'\nEpoch:\t' + String(rebaseInfo.epoch).padStart(12, '0'), 
-			'\t',
-			new Date(timestamp * 1000).toISOString().replace(':00.000Z','').replace('T',' '),
-			'\n',
-			'totalSupply:\t' + uint256.Commify(rebaseInfo.totalSupply),
-			'\n',
-			'🔥\t' + uint256.Commify(rebaseInfo.firePitBalance),
-			'\n',
-			'circSupply\t' + uint256.Commify(rebaseInfo.circulatingSupply),
-			'\n',
-			'holder Amount\t' + uint256.Commify(rebaseInfo.holder),
-			'\n',
-			'slash Times\t' + uint256.Commify(rebaseInfo.totalFirePitSlashes),
-			'\n',
-			'slash Amount\t' + uint256.Commify(rebaseInfo.totalFirePitSlashVuls),
-			'\n',
-			'vulsPerFrag\t' + uint256.Commify(rebaseInfo.vulsPerFrag),
-			'\n',
-			'🚀\tRebasing ' + (rebaseInfo.active ? 'ACTIVE' : 'ENDED')
-		);
+		// console.info(
+		// 	'\nEpoch:\t' + String(rebaseInfo.epoch).padStart(12, '0'), 
+		// 	'\t',
+		// 	new Date(timestamp * 1000).toISOString().replace(':00.000Z','').replace('T',' '),
+		// 	'\n',
+		// 	'totalSupply:\t' + uint256.Commify(rebaseInfo.totalSupply),
+		// 	'\n',
+		// 	'🔥\t' + uint256.Commify(rebaseInfo.firePitBalance),
+		// 	'\n',
+		// 	'circSupply\t' + uint256.Commify(rebaseInfo.circulatingSupply),
+		// 	'\n',
+		// 	'holder Amount\t' + uint256.Commify(rebaseInfo.holder),
+		// 	'\n',
+		// 	'slash Times\t' + uint256.Commify(rebaseInfo.totalFirePitSlashes),
+		// 	'\n',
+		// 	'slash Amount\t' + uint256.Commify(rebaseInfo.totalFirePitSlashVuls),
+		// 	'\n',
+		// 	'vulsPerFrag\t' + uint256.Commify(rebaseInfo.vulsPerFrag),
+		// 	'\n',
+		// 	'🚀\tRebasing ' + (rebaseInfo.active ? 'ACTIVE' : 'ENDED')
+		// );
 
-		timestamp += EPOCH_SECONDS;
+		timestamp += BLOCK_SECONDS;
 
 
-    }, EPOCH_INTERVAL_MSEC));
+    }, BLOCK_INTERVAL_MSEC));
 
 }); // Server is insecure, no ssl
 
 
 function getBalance(call, callback) {
-	console.log('34989348394893483489389384938493849384938493483849384948394839483')
 	callback(null, protocol.getBalance(call.request.account));
 }
 
@@ -83,14 +83,6 @@ function transfer(call, callback) {
 	callback(null, result);
 
 	console.info(`\nTransfer\tamount: ${uint256.Commify(call.request.amount)}\n\t\tfrom: ${call.request.from} (${uint256.Commify(result.balances[0].balance)}) \n\t\tto: ${call.request.to} (${uint256.Commify(result.balances[1].balance)})\n`);
-}
-
-
-function gasTransfer(call, callback) {
-	const result = protocol.gasTransfer(call.request.from, call.request.to, call.request.amount);
-	callback(null, result);
-
-	console.info(`\nGas Transfer\tamount: ${uint256.Commify(call.request.amount)}\n\t\tfrom: ${call.request.from} (${uint256.Commify(result.balances[0].balance)}) \n\t\tto: ${call.request.to} (${uint256.Commify(result.balances[1].balance)})\n`);
 }
 
 

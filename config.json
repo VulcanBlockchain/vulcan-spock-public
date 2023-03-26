@@ -1,16 +1,16 @@
 {
 	"treasuryAccount": "0xTreasury",
 	"flexAccount": "0xFlex",
-	"holder":"0xDemo1",
+	"firePitAccount": "0x0000",
 
 	"genesisAccounts": {
 		"0xTreasury": 33000000,
 		"0xSacrificers": 25058513,
 		"0xNodeOwners": 1599000,
 		"0xDemo1": 1000,
-		"0xDemo2": 0,
-		"0xDemo3": 0,
-		"0xDemo4": 0
+		"0xDemo2": 1,
+		"0xDemo3": 1000000,
+		"0xDemo4": 50
 	},
 
 	"treasuryTaxRate": 1,

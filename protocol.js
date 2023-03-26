@@ -1,26 +1,41 @@
 const { uint256 } = require('./go-uint256');
-
-const NULL_ADDRESS = '0x0000';
+const Table = require('cli-table');
 
 // Cryptocurrency precision is 18 digits after decimal point
 const DECIMAL_RANGE = uint256.Exp(10, 18);//BigNumber.from(10).pow(18)
 
-
-const MAX_UINT256 = uint256.MAX();
 const MILLION = uint256.Exp(10, 6);
 const BILLION = uint256.Exp(10, 9);
 const PERCENT_DIVISOR = 100;
 
-const BURN_EPOCH_INTERVAL = 4 * 24 * 30 * 3; // Every quarter
+const SECONDS_PER_MINUTE = 60;
+const REBASE_INTERVAL_MINUTES = 15;
+const BLOCK_INTERVAL = 5; //seconds
+const BLOCKS_PER_MINUTE = SECONDS_PER_MINUTE / BLOCK_INTERVAL;
+const REBASE_BLOCK_INTERVAL = BLOCKS_PER_MINUTE * REBASE_INTERVAL_MINUTES; 
+
+const BURN_INTERVAL_MINUTES = 3 * 30 * 24 * 60; // Quarter
+const BURN_BLOCK_INTERVAL = BLOCKS_PER_MINUTE * BURN_INTERVAL_MINUTES; // Every quarter
 const BURN_SUPPLY_THRESHOLD = 51;
 
-const REBASE_DIVISOR = 10 ** 8; // Converts rebase interest rate to correct decimal value
-const REBASE_RATE = 1256; // APR = 44%, APY = 55.27%
+const REBASE_RATE_EXP_MULTIPLIER = uint256.NewInt(8);
+const REBASE_RATE = uint256.NewInt(100001256); // APR = 44%, APY = 55.27%, 1.00001256 x 10^8
 
 const MAX_VUL_SUPPLY = uint256.Mul(uint256.Mul(375, BILLION), DECIMAL_RANGE); // 3.75 BILLION
 const INITIAL_VUL_SUPPLY = uint256.Mul(uint256.Mul(330, MILLION), DECIMAL_RANGE); // 330 MILLION
 
 class Protocol {
+
+
+    #balances = {};
+    #lastEpoch = -1;
+
+    #currentBlock = uint256.NewInt(0);
+    #nextRebaseBlock = uint256.NewInt(REBASE_BLOCK_INTERVAL);
+    #nextBurnBlock = uint256.NewInt(BURN_BLOCK_INTERVAL);
+
+    #isRebaseActive = true;
+    #shouldSlashFirePit = false;
 
     // Receiving accounts
     treasuryAccount;
@@ -33,15 +48,6 @@ class Protocol {
     #flexTaxRate;
     #firePitTaxRate;
 
-    #totalSupply;
-
-    #vulsPerFrag;
-    #fragBalances = {};
-
-    #epoch = 0;
-    #isRebaseActive = true;
-    #shouldSlashFirePit = false;
-
     #startSlashEpoch;   // Epoch when slashing can start
     #stopSlashEpoch;    // Epoch to stop slashing/vaporize
 
@@ -50,33 +56,45 @@ class Protocol {
     #firepitMod;    // To activate new slash/vaporise method
     #slashUsingInitSupply;
 
-    totalFirePitSlashes;    // Track how many slashes happened
-    totalFirePitSlashVuls;  // Track how much in vul slashes
+    #totalFirePitSlashes;    // Track how many slashes happened
+    #totalFirePitSlashVuls;  // Track how much in vul slashes
 
     #totalFragments;    // Make this dynamic so it can be modified in _burnTotalSupply
+
+    /********************************************************************************/
+    /*                                    A P I                                     */
+    /********************************************************************************/
+
+
+    getBalance(account, block) {
+        if (this.#balances[account]) {
+            return {
+                account,
+                balance: this.#balances[account] //uint256.Div(this.#balances[account], this.#vulsPerFrag).String()
+            }
+        } else {
+            return {
+                account,
+                balance: uint256.NewInt(0)
+            }
+        }
+    }
+
+
+
+    /********************************************************************************/
+
 
     constructor(options) {
         this.options = options || {};
 
-        this.#totalFragments = uint256.Sub(MAX_UINT256, uint256.Mod(MAX_UINT256, INITIAL_VUL_SUPPLY));
-
-        this.#totalSupply = INITIAL_VUL_SUPPLY;
-        this.#vulsPerFrag = uint256.Div(this.#totalFragments, this.#totalSupply);
-        
         this.treasuryAccount = this.options.treasuryAccount;
         this.flexAccount = this.options.flexAccount;
-        this.firePitAccount = NULL_ADDRESS;
-        this.holderAccount = this.options.holderAccount;
+        this.firePitAccount = this.options.firePitAccount;
 
         this.#treasuryTaxRate = this.options.treasuryTaxRate;
         this.#flexTaxRate = this.options.flexTaxRate;
         this.#firePitTaxRate = this.options.firePitTaxRate;
-
-        // Initialize required accounts
-        this.#fragBalances[this.treasuryAccount] = uint256.NewInt(0);
-        this.#fragBalances[this.firePitAccount] = uint256.NewInt(0);
-        this.#fragBalances[this.flexAccount] = uint256.NewInt(0);
-        this.#fragBalances[this.holderAccount] = uint256.NewInt(0); // Added so we can monitor holder amount during vaporization 
 
         this.#startSlashEpoch = this.options.startSlashEpoch;
         this.#stopSlashEpoch = this.options.stopSlashEpoch;
@@ -85,71 +103,175 @@ class Protocol {
         this.#firepitMod = this.options.firepitMod;
         this.#slashUsingInitSupply = this.options.slashUsingInitSupply;
 
-
-        this.totalFirePitSlashes = 0;
-        this.totalFirePitSlashVuls = uint256.NewInt(0);
+        this.#totalFirePitSlashes = 0;
+        this.#totalFirePitSlashVuls = uint256.NewInt(0);
 
         this._initializeWallets(this.options.genesisAccounts);
     }
 
-    rebase() {
 
-        // Rebasing stops once MaxSupply is reached
-        if (this.#isRebaseActive === true) {
+    _initializeWallets(accounts) {
+        // Initialize required accounts
+        this.#balances[this.treasuryAccount] = uint256.NewInt(0);
+        this.#balances[this.flexAccount] = uint256.NewInt(0);
+        
+        // Set initial balances for all genesis accounts and track total in genesisAmount
+        let genesisVulAmount = uint256.NewInt(0);
+        Object.keys(accounts).forEach((account) => {
+            this.#balances[account] = this._scale(accounts[account]);
+            genesisVulAmount = uint256.Add(genesisVulAmount, this.#balances[account]);
+            console.log(`\nBalance of ${account}`, uint256.Commify(this.getBalance(account).balance.String()));
+        });
 
-            // Destroy FirePit balance on next epoch after end of every quarter if conditions are met
-            if (
-                    (this.#epoch % BURN_EPOCH_INTERVAL === 0) && 
-                    this.#slashFirePit &&
-                    ((this.#epoch-1) >= this.#startSlashEpoch) && 
-                    ((this.#epoch - 1) <= this.#stopSlashEpoch)
-                ) {
-                this.#shouldSlashFirePit = true;
-            }
-
-            // Only rebase after 0th Epoch
-            if (this.#epoch > 0) {
-
-                if (this.#shouldSlashFirePit)  {
-                    this._slashFirePit();
-                    this.#shouldSlashFirePit = false;
-                }
-
-                this.#isRebaseActive = this._mintTotalSupply(
-                    uint256.Div(
-                        uint256.Mul(
-                            this.#totalSupply,
-                            REBASE_RATE
-                        ),
-                        REBASE_DIVISOR
-                ));
-            }
-        }
-
-        // Increment the epoch
-        this.#epoch++;
-
-        return {
-            active: this.#isRebaseActive,
-            epoch: this.#epoch - 1,
-            totalSupply: this.#totalSupply,
-            circulatingSupply: uint256.Sub(this.#totalSupply, this.getBalance(this.firePitAccount).balance),
-            vulsPerFrag: this.#vulsPerFrag,
-            firePitBalance: this.getBalance(this.firePitAccount).balance,
-            totalFirePitSlashes: this.totalFirePitSlashes,
-            totalFirePitSlashVuls: this.totalFirePitSlashVuls,
-            holder: this.getBalance('0xDemo1').balance
-        };
+        this.#balances[this.firePitAccount] = uint256.Sub(INITIAL_VUL_SUPPLY, genesisVulAmount);     
     }
 
+
+    // This function is only needed for simulator. In the 
+    // protocol, the current block number is readily available
+    _addBlock() {
+
+        this.#currentBlock = uint256.Add(this.#currentBlock, uint256.NewInt(1));
+
+        if (this.#currentBlock === this.#nextBurnBlock) {
+            this.burn();
+            this.#nextBurnBlock += BURN_BLOCK_INTERVAL;
+        }
+
+        // Show balances only for epoch
+        if (this._getEpoch().GT(this.#lastEpoch)) {
+            this.#lastEpoch = this._getEpoch();
+            this._showBalances();
+        }
+    }
+
+
+
+    _getEpoch(block) {
+        // Calculate the epoch based on the block number
+        let epoch = uint256.Div(block ?? this.#currentBlock, REBASE_BLOCK_INTERVAL);
+        
+    }
+
+    _calculateRebasedBalance(balance, block) {
+
+        // Step 1:  Calculate the epoch by dividing current block by block interval.
+        //          Dropping the decimal portion gives the correct floor value.
+
+        // The formula  is P * (1 + r)^t
+        // P is the balance
+        // r is the rate which is constant .00001256
+        // We use (1 + r) * 10^8 to give integer value of REBASE_RATE = 100001256
+        // Later we will need to divide final value by 10^8
+
+        // Step 2:  Calculate the interest by calculating REBASE_RATE^epoch
+        //          This value is very large and has no loss of precision
+
+        // Step 3:  Multiply the balance by the interest to give the rebased value scaled up
+        //                  by several orders of magnitude
+
+        // Step 4:  Scale the final value back down by dividing it by 10^(8 * epoch)
+        //                  Since we are not using a decimal value for 1+r (something like 1.00001256)
+        //                  we have to scale back the calculated value by dividing it by the same
+        //                  exponent of 10 to which 1+r was raised
+
+        // This algorithm does not use any division until the very last step. This ensures that all
+        // the numeric precision is maintained by working solely with integers throughout the calculation.
+
+        const targetBlock = typeof block !== 'undefined' ? block : this.#currentBlock;
+        const epoch = this._getEpoch(targetBlock);
+        const interest = uint256.Exp(
+                                    REBASE_RATE, 
+                                    epoch
+                        );
+
+        return uint256.Div(
+                                uint256.Mul(
+                                    balance,
+                                    interest
+                                ),
+                                uint256.Exp(
+                                    10,
+                                    uint256.Mul(
+                                        REBASE_RATE_EXP_MULTIPLIER,
+                                        epoch
+                                    )                                        
+                                )
+                        )
+
+    }
+
+
+    rebase() {
+
+        console.log('Rebased at Block ', this.#currentBlock.String()); 
+
+        this._showBalances();
+
+        //     // Destroy FirePit balance on next epoch after end of every quarter if conditions are met
+        //     if (
+        //             (this.#epoch % BURN_EPOCH_INTERVAL === 0) && 
+        //             this.#slashFirePit &&
+        //             ((this.#epoch-1) >= this.#startSlashEpoch) && 
+        //             ((this.#epoch - 1) <= this.#stopSlashEpoch)
+        //         ) {
+        //         this.#shouldSlashFirePit = true;
+        //     }
+
+
+        //         if (this.#shouldSlashFirePit)  {
+        //             this._slashFirePit();
+        //             this.#shouldSlashFirePit = false;
+        //         }
+            
+        
+
+
+        // return {
+        //     active: this.#isRebaseActive,
+        //     epoch: this.#epoch - 1,
+        //     totalSupply: this.#totalSupply,
+        //     circulatingSupply: uint256.Sub(this.#totalSupply, this.getBalance(this.firePitAccount).balance),
+        //     vulsPerFrag: this.#vulsPerFrag,
+        //     firePitBalance: this.getBalance(this.firePitAccount).balance,
+        //     totalFirePitSlashes: this.#totalFirePitSlashes,
+        //     totalFirePitSlashVuls: this.#totalFirePitSlashVuls,
+        //     holder: this.getBalance('0xDemo1').balance
+        // };
+    }
+
+
+    _scale(num) {
+        return uint256.Mul(num, DECIMAL_RANGE);
+    }
+
+    _showBalances() {
+        
+        const table = new Table({
+            head: ['Block', 'Epoch', 'Account', 'Balance', 'Rebased Balance', 'Decimal']
+        });
+
+        Object.keys(this.#balances).forEach((key) => {
+            const rebasedBalance = this._calculateRebasedBalance(uint256.NewInt(this.#balances[key]));
+    
+            // We can safely use this number in JavaScript for the purpose of display
+            const loggedBalance = Number(rebasedBalance.String()) / Math.pow(10, 18)
+    
+            table.push([this.#currentBlock.Commify(), this._getEpoch().Commify(), key, uint256.Commify(this.#balances[key]), uint256.Commify(rebasedBalance), loggedBalance]);    
+        });
+
+        console.table(table.toString());
+    }
+
+/*
     // Handles transfer of funds from one account to another while handling tax
     transfer(from, to, amount) {
 
         // Convert the amount from the actual to the internal virtual amount
-        let vulAmount = this._scaleAndVirtualize2Frag(amount);
+        let vulAmount = this._scaleAndRebase(amount);
 
         // Transfer funds if there is enough balance in the sender's account
-        if (this.#fragBalances[from] && uint256.Sub(this.#fragBalances[from], vulAmount).GTE(0)) {
+        if (this.#balances[from] && uint256.Sub(this.#balances[from], vulAmount).GTE(0)) {
 
             // Check if the transaction is taxable and if yes, reduce the amount appropriately
             // by transferring funds to the appropriate tax accounts
@@ -161,8 +283,8 @@ class Protocol {
             }
 
             // Transfer the post-tax balance from the sender to the recipient
-            this.#fragBalances[from] = uint256.Sub(this.#fragBalances[from], vulAmount);
-            this.#fragBalances[to] = !this.#fragBalances[to] ? vulAmount : uint256.Add(this.#fragBalances[to], vulAmount);
+            this.#balances[from] = uint256.Sub(this.#balances[from], vulAmount);
+            this.#balances[to] = !this.#balances[to] ? vulAmount : uint256.Add(this.#balances[to], vulAmount);
 
         } else {
             throw new Error("Insufficient balance")
@@ -181,14 +303,14 @@ class Protocol {
     gasTransfer(from, to, amount) {
 
         // Convert the amount from the actual to the internal virtual amount
-        let vulAmount = this._scaleAndVirtualize2Frag(amount);
+        let vulAmount = this._scaleAndRebase(amount);
 
         // Transfer funds if there is enough balance in the sender's account
-        if (this.#fragBalances[from] && uint256.Sub(this.#fragBalances[from], vulAmount).GTE(0)) {
+        if (this.#balances[from] && uint256.Sub(this.#balances[from], vulAmount).GTE(0)) {
 
             // Transfer the balance from the sender to the recipient
-            this.#fragBalances[from] = uint256.Sub(this.#fragBalances[from], vulAmount);
-            this.#fragBalances[to] = !this.#fragBalances[to] ? vulAmount : uint256.Add(this.#fragBalances[to], vulAmount);
+            this.#balances[from] = uint256.Sub(this.#balances[from], vulAmount);
+            this.#balances[to] = !this.#balances[to] ? vulAmount : uint256.Add(this.#balances[to], vulAmount);
 
         } else {
             throw new Error("Insufficient balance")
@@ -202,35 +324,7 @@ class Protocol {
         }
     }
 
-    totalSupply() {
-        return { totalSupply: this.#totalSupply.String() };   
-    }
 
-    getBalance(account) {
-        if (this.#fragBalances[account]) {
-            return {
-                account,
-                balance: uint256.Div(this.#fragBalances[account], this.#vulsPerFrag).String()
-            }
-        } else {
-            return {
-                account,
-                balance: '0'
-            }
-        }
-    }
-
-    _initializeWallets(accounts) {
-        // Set initial balances for all genesis accounts and track total in genesisAmount
-        let genesisVulAmount = uint256.NewInt(0);
-        Object.keys(accounts).forEach((account) => {
-            this.#fragBalances[account] = this._scaleAndVirtualize2Frag(accounts[account]);
-            genesisVulAmount = uint256.Add(genesisVulAmount, this.#fragBalances[account]);
-            console.log(`\nBalance of ${account}`, uint256.Commify(this.getBalance(account).balance));
-        });
-
-        this.#fragBalances[this.firePitAccount] = uint256.Sub(this._virtualize2Frag(this.#totalSupply), genesisVulAmount);     
-    }
 
     _slashFirePit() {
         
@@ -250,7 +344,7 @@ class Protocol {
             if(destroyTargetAmount.LTE(uint256.NewInt(0))) console.log("Zero amount to burn");
             else{
                 this._burnTotalSupply(this.firePitAccount, destroyTargetAmount);
-                this.totalFirePitSlashes++;
+                this.#totalFirePitSlashes++;
             } 
         }
     }
@@ -281,7 +375,7 @@ class Protocol {
 
             //Update firepit balance by subtracting slash amount 
             console.log(account, uint256.Commify(this.getBalance(account).balance), uint256.Commify(amount))
-            this.#fragBalances[account] = uint256.Sub(this.#fragBalances[account], virtualizedAmount);
+            this.#balances[account] = uint256.Sub(this.#balances[account], virtualizedAmount);
             console.log(account, uint256.Commify(this.getBalance(account).balance));
 
 
@@ -296,32 +390,20 @@ class Protocol {
                 
             console.log('vulperfrag aft:',this.#vulsPerFrag.String());
 
-            this.totalFirePitSlashVuls = uint256.Add(this.totalFirePitSlashVuls, amount);
+            this.#totalFirePitSlashVuls = uint256.Add(this.#totalFirePitSlashVuls, amount);
         }
         else{
             this.#totalSupply = uint256.Sub(this.#totalSupply, amount);
             console.log(account, uint256.Commify(this.getBalance(account).balance), uint256.Commify(amount))
-            this.#fragBalances[account] = uint256.Sub(this.#fragBalances[account], virtualizedAmount);
+            this.#balances[account] = uint256.Sub(this.#balances[account], virtualizedAmount);
             console.log(account, uint256.Commify(this.getBalance(account).balance));
 
             // IMPORTANT: Only change vulsPerFrag after modifying account balances
             this.#vulsPerFrag = uint256.Div(this.#totalFragments, this.#totalSupply);
-            this.totalFirePitSlashVuls = uint256.Add(this.totalFirePitSlashVuls, amount);
+            this.#totalFirePitSlashVuls = uint256.Add(this.#totalFirePitSlashVuls, amount);
         }
     }
 
-
-    _scale(num) {
-        return uint256.Mul(num, DECIMAL_RANGE);
-    }
-
-    _scaleAndVirtualize2Frag(num) {
-        return uint256.Mul(this._scale(num), this.#vulsPerFrag);
-    }
-
-    _virtualize2Frag(num) {
-        return uint256.Mul(num, this.#vulsPerFrag);
-    }
 
     // Helper function which transfers the tax from the sender account to the tax account
     _chargeTax(senderAccount, amount, taxAccount, taxRate) {
@@ -329,8 +411,8 @@ class Protocol {
         let tax = uint256.NewInt(0);
         if (taxRate > 0) {
             tax = uint256.Div(uint256.Mul(amount, taxRate), PERCENT_DIVISOR);
-            this.#fragBalances[senderAccount] = uint256.Sub(this.#fragBalances[senderAccount], tax);
-            this.#fragBalances[taxAccount] = uint256.Add(this.#fragBalances[taxAccount], tax);
+            this.#balances[senderAccount] = uint256.Sub(this.#balances[senderAccount], tax);
+            this.#balances[taxAccount] = uint256.Add(this.#balances[taxAccount], tax);
         }
         return tax;
     }
@@ -344,6 +426,7 @@ class Protocol {
 
         return this.#isRebaseActive;
     }
+    */
 }
 
 module.exports.Protocol = Protocol;
