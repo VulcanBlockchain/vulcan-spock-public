@@ -150,7 +150,7 @@ class Protocol {
     _getEpoch(block) {
         // Calculate the epoch based on the block number
         let epoch = uint256.Div(block ?? this.#currentBlock, REBASE_BLOCK_INTERVAL);
-        
+        return epoch;
     }
 
     _calculateRebasedBalance(balance, block) {
