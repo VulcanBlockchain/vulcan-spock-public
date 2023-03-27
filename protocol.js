@@ -178,7 +178,6 @@ class Protocol {
 
     _calculateRebasedBalance(balance, block) {
 
-
         const targetBlock = typeof block !== 'undefined' ? block : this.#currentBlock;
         const epoch = this._getEpoch(targetBlock);
         const interest = uint256.Exp(
@@ -263,7 +262,7 @@ class Protocol {
         console.table(table.toString());
     }
 
-/*
+
     // Handles transfer of funds from one account to another while handling tax
     transfer(from, to, amount) {
 
@@ -298,6 +297,8 @@ class Protocol {
             ]
         }
     }
+
+/*
 
     // Handles transfer of gas payment to nodes
     gasTransfer(from, to, amount) {
