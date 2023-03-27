@@ -141,7 +141,7 @@ class Protocol {
         // Show balances only for epoch
         if (this._getEpoch().GT(this.#lastEpoch)) {
             this.#lastEpoch = this._getEpoch();
-            this._showBalances();
+            this.rebase();
         }
     }
 
@@ -153,30 +153,31 @@ class Protocol {
         return epoch;
     }
 
+// Step 1:  Calculate the epoch by dividing current block by block interval.
+//          Dropping the decimal portion gives the correct floor value.
+
+// The formula  is P * (1 + r)^t
+// P is the balance
+// r is the rate which is constant .00001256
+// We use (1 + r) * 10^8 to give integer value of REBASE_RATE = 100001256
+// Later we will need to divide final value by 10^8
+
+// Step 2:  Calculate the interest by calculating REBASE_RATE^epoch
+//          This value is very large and has no loss of precision
+
+// Step 3:  Multiply the balance by the interest to give the rebased value scaled up
+//                  by several orders of magnitude
+
+// Step 4:  Scale the final value back down by dividing it by 10^(8 * epoch)
+//                  Since we are not using a decimal value for 1+r (something like 1.00001256)
+//                  we have to scale back the calculated value by dividing it by the same
+//                  exponent of 10 to which 1+r was raised
+
+// This algorithm does not use any division until the very last step. This ensures that all
+// the numeric precision is maintained by working solely with integers throughout the calculation.
+
     _calculateRebasedBalance(balance, block) {
 
-        // Step 1:  Calculate the epoch by dividing current block by block interval.
-        //          Dropping the decimal portion gives the correct floor value.
-
-        // The formula  is P * (1 + r)^t
-        // P is the balance
-        // r is the rate which is constant .00001256
-        // We use (1 + r) * 10^8 to give integer value of REBASE_RATE = 100001256
-        // Later we will need to divide final value by 10^8
-
-        // Step 2:  Calculate the interest by calculating REBASE_RATE^epoch
-        //          This value is very large and has no loss of precision
-
-        // Step 3:  Multiply the balance by the interest to give the rebased value scaled up
-        //                  by several orders of magnitude
-
-        // Step 4:  Scale the final value back down by dividing it by 10^(8 * epoch)
-        //                  Since we are not using a decimal value for 1+r (something like 1.00001256)
-        //                  we have to scale back the calculated value by dividing it by the same
-        //                  exponent of 10 to which 1+r was raised
-
-        // This algorithm does not use any division until the very last step. This ensures that all
-        // the numeric precision is maintained by working solely with integers throughout the calculation.
 
         const targetBlock = typeof block !== 'undefined' ? block : this.#currentBlock;
         const epoch = this._getEpoch(targetBlock);
@@ -205,7 +206,6 @@ class Protocol {
     rebase() {
 
         console.log('Rebased at Block ', this.#currentBlock.String()); 
-
         this._showBalances();
 
         //     // Destroy FirePit balance on next epoch after end of every quarter if conditions are met
