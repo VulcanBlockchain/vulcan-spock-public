@@ -181,7 +181,8 @@ class Protocol {
         const targetBlock = typeof block !== 'undefined' ? block : this.#currentBlock;
         const epoch = this._getEpoch(targetBlock);
 
-
+        // TODO: Replace exponent with accumulator to eliminate large computations
+        
         const interest = uint256.Exp(
                                     REBASE_RATE, 
                                     epoch
