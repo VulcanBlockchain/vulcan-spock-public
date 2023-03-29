@@ -180,6 +180,8 @@ class Protocol {
 
         const targetBlock = typeof block !== 'undefined' ? block : this.#currentBlock;
         const epoch = this._getEpoch(targetBlock);
+
+
         const interest = uint256.Exp(
                                     REBASE_RATE, 
                                     epoch
