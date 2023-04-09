@@ -13,7 +13,8 @@
     "@ethersproject/bignumber": "^5.7.0",
     "@grpc/grpc-js": "^1.8.0",
     "@grpc/proto-loader": "^0.7.4",
-    "ethers": "^5.7.2"
+    "ethers": "^5.7.2",
+    "fs-extra": "^11.1.1"
   },
   "devDependencies": {
     "cli-table": "^0.3.11"
